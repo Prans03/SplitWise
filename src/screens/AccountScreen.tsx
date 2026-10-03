@@ -5,12 +5,16 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/useAuthStore';
 import { useStore } from '../store/useStore';
 import { useTheme } from '../theme';
+import { RootStackParamList } from '../types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AccountScreen() {
-  const nav     = useNavigation<any>();
+  const nav     = useNavigation<Nav>();
   const t       = useTheme();
   const user    = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);

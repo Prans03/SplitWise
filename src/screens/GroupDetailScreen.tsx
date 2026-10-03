@@ -4,7 +4,7 @@
 import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Alert, StatusBar, FlatList,
-  RefreshControl, TextInput
+  RefreshControl, TextInput, Modal, TouchableOpacity, Pressable
 } from 'react-native';
 import { TouchableRipple } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -96,6 +96,34 @@ export default function GroupDetailScreen() {
     ]);
   }, [deleteExpense, groupId]);
 
+  // ── Expense action sheet state ─────────────────────────────
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+
+  const handleLongPress = useCallback((expense: Expense) => {
+    setSelectedExpense(expense);
+  }, []);
+
+  const handleEditExpense = useCallback(() => {
+    if (!selectedExpense) return;
+    setSelectedExpense(null);
+    nav.navigate('AddExpense', {
+      groupId,
+      defaultDesc: selectedExpense.description,
+      defaultAmt: selectedExpense.amount,
+      defaultCat: selectedExpense.category,
+    });
+  }, [selectedExpense, nav, groupId]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!selectedExpense) return;
+    const id = selectedExpense.id;
+    setSelectedExpense(null);
+    Alert.alert('Delete Expense?', `Remove "${selectedExpense.description}" (${selectedExpense.amount.toLocaleString('en-IN')} ₹)?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteExpense(groupId, id) },
+    ]);
+  }, [selectedExpense, deleteExpense, groupId]);
+
   const onDeleteGroup = useCallback(() => {
     Alert.alert(`Delete "${group?.name}"?`, 'All expenses will be removed.', [
       { text: 'Cancel', style: 'cancel' },
@@ -107,8 +135,7 @@ export default function GroupDetailScreen() {
 
   const renderExpense = ({ item }: { item: Expense }) => (
     <TouchableRipple
-      onLongPress={() => onDeleteExpense(item.id)}
-     
+      onLongPress={() => handleLongPress(item)}
       style={[styles.expenseRow, { backgroundColor: t.surface }]}
     >
       <View style={styles.expenseLeft}>
@@ -117,7 +144,7 @@ export default function GroupDetailScreen() {
         </Text>
         <Text style={[styles.expenseDesc, { color: t.onSurfaceVariant }]}>{item.description}</Text>
         <Text style={[styles.expensePayer, { color: t.onSurfaceVariant }]}>
-          paid by {item.paidByName}
+          {item.isPersonal ? '👤 Personal' : `paid by ${item.paidByName}`}
         </Text>
       </View>
     </TouchableRipple>
@@ -282,6 +309,74 @@ export default function GroupDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={t.primary} colors={[t.primary]} />}
         contentContainerStyle={{ paddingBottom: 80 }}
       />
+
+      {/* ── Expense Action Sheet Modal ─────────────────────── */}
+      <Modal
+        visible={!!selectedExpense}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedExpense(null)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+          onPress={() => setSelectedExpense(null)}
+        >
+          <Pressable onPress={e => e.stopPropagation()}>
+            <View style={{ backgroundColor: t.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 36 }}>
+              {/* Handle */}
+              <View style={{ alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: t.outlineVariant, marginTop: 12, marginBottom: 8 }} />
+
+              {/* Expense summary header */}
+              <View style={{ paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: t.outlineVariant }}>
+                <Text style={{ fontSize: 13, color: t.onSurfaceVariant, fontWeight: '600', marginBottom: 4 }}>EXPENSE</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: t.onSurface }}>{selectedExpense?.description}</Text>
+                <Text style={{ fontSize: 14, color: t.primary, fontWeight: '700', marginTop: 2 }}>
+                  {selectedExpense?.amount?.toLocaleString('en-IN')} ₹
+                </Text>
+              </View>
+
+              {/* Actions */}
+              <TouchableOpacity
+                onPress={handleEditExpense}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 24, paddingVertical: 18 }}
+                activeOpacity={0.7}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: t.primaryContainer, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18 }}>✏️</Text>
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: t.onSurface }}>Edit Expense</Text>
+                  <Text style={{ fontSize: 13, color: t.onSurfaceVariant }}>Modify description, amount or category</Text>
+                </View>
+              </TouchableOpacity>
+
+              <View style={{ height: 1, backgroundColor: t.outlineVariant, marginHorizontal: 24 }} />
+
+              <TouchableOpacity
+                onPress={handleDeleteSelected}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 24, paddingVertical: 18 }}
+                activeOpacity={0.7}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: t.errorContainer, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 18 }}>🗑️</Text>
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: t.error }}>Delete Expense</Text>
+                  <Text style={{ fontSize: 13, color: t.onSurfaceVariant }}>This action cannot be undone</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setSelectedExpense(null)}
+                style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: t.surfaceVariant, borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: t.onSurfaceVariant }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -163,27 +163,29 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
     return { groupName: res.data.group.name };
   },
 
-  // ── Fetch expenses for a group ────────────────────────────
+  // ── Fetch expenses for a group (paginated, page=1 fetches latest 30) ────
   fetchExpenses: async (groupId) => {
-    const res = await api.get<any[]>(`/groups/${groupId}/expenses`);
-    if (res.data) {
-      const expenses: Expense[] = res.data.map((e) => ({
-        id: e.id, groupId,
-        description: e.description,
-        amount: Number(e.amount),
-        currency: e.currency ?? 'INR',
-        category: e.category,
-        paidById: e.paid_by,
-        paidByName: e.paid_by_name ?? '',
-        paidByColor: e.paid_by_color ?? '#888',
-        splitMode: e.split_mode,
-        splits: e.splits ?? [],
-        date: e.date,
-        createdAt: e.created_at,
-        isPersonal: e.is_personal ?? false,
-      }));
-      set((s) => ({ expenses: { ...s.expenses, [groupId]: expenses } }));
-    }
+    const res = await api.get<any>(`/groups/${groupId}/expenses`);
+    if (!res.data) return;
+    // Backend now returns { data: [], page, limit, total, hasMore }
+    // Fall back to flat array for backward compatibility
+    const rows: any[] = Array.isArray(res.data) ? res.data : (res.data.data ?? []);
+    const expenses: Expense[] = rows.map((e) => ({
+      id: e.id, groupId,
+      description: e.description,
+      amount: Number(e.amount),
+      currency: e.currency ?? 'INR',
+      category: e.category,
+      paidById: e.paid_by,
+      paidByName: e.paid_by_name ?? '',
+      paidByColor: e.paid_by_color ?? '#888',
+      splitMode: e.split_mode,
+      splits: e.splits ?? [],
+      date: e.date,
+      createdAt: e.created_at,
+      isPersonal: e.is_personal ?? false,
+    }));
+    set((s) => ({ expenses: { ...s.expenses, [groupId]: expenses } }));
   },
 
   // ── Add expense (optimistic Local-First) ──────────────────────────────

@@ -22,7 +22,8 @@
       },
       "predictiveBackGestureEnabled": true,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -40,6 +41,11 @@
       ],
       "expo-sharing",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "34ff25c7-8335-4a16-ab42-465843ba8830"
+      }
+    }
   }
 }

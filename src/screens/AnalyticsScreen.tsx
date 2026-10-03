@@ -3,9 +3,10 @@
 // Buckwheat ideology: fully analytics breakdown
 // ============================================================
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, StatusBar, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { TouchableRipple, ProgressBar } from 'react-native-paper';
 import { useTheme } from '../theme';
@@ -13,9 +14,12 @@ import { useStore } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { formatINR } from '../utils/settlement';
 import { useQuickLogs } from '../hooks/useQuickLogs';
+import { RootStackParamList } from '../types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AnalyticsScreen() {
-  const nav = useNavigation();
+  const nav = useNavigation<Nav>();
   const t = useTheme();
   
   const user = useAuthStore(s => s.user);
@@ -25,9 +29,13 @@ export default function AnalyticsScreen() {
   const addExpense = useStore(s => s.addExpense);
   const fetchExpenses = useStore(s => s.fetchExpenses);
 
+  const [isFetching, setIsFetching] = useState(false);
+
   // Fetch expenses for all groups on mount to ensure data is fresh even on direct navigation
   useEffect(() => {
-    groups.forEach(g => fetchExpenses(g.id));
+    if (groups.length === 0) return;
+    setIsFetching(true);
+    Promise.all(groups.map(g => fetchExpenses(g.id))).finally(() => setIsFetching(false));
   }, [groups.length]);
 
   const allExpenses = useMemo(() => Object.values(expenses).flat(), [expenses]);
@@ -131,12 +139,20 @@ export default function AnalyticsScreen() {
           <MaterialIcons name="arrow-back" size={24} color={t.onSurface} />
         </TouchableRipple>
         <Text style={[styles.title, { color: t.onSurface }]}>Personal Analytics</Text>
-        <TouchableRipple onPress={() => (nav as any).navigate('BudgetConfig')} style={{ padding: 8, borderRadius: 20 }}>
+        <TouchableRipple onPress={() => nav.navigate('BudgetConfig')} style={{ padding: 8, borderRadius: 20 }}>
           <MaterialIcons name="settings" size={24} color={t.onSurfaceVariant} />
         </TouchableRipple>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+
+        {/* Loading skeleton overlay */}
+        {isFetching && allExpenses.length === 0 && (
+          <View style={[styles.summaryCard, { backgroundColor: t.surfaceVariant, alignItems: 'center', gap: 12 }]}>
+            <ActivityIndicator color={t.primary} size="large" />
+            <Text style={{ color: t.onSurfaceVariant, fontWeight: '600' }}>Loading your expenses…</Text>
+          </View>
+        )}
         
         {/* Month Summary Card */}
         <View style={[styles.summaryCard, { backgroundColor: t.primaryContainer }]}>

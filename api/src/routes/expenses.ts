@@ -22,6 +22,17 @@ router.get('/', async (req: Request, res: Response) => {
   const { id: groupId } = req.params;
   if (!await assertMember(groupId, req.user!.id, res)) return;
 
+  // Pagination: ?page=1&limit=30 (default)
+  const page  = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 30));
+  const offset = (page - 1) * limit;
+
+  // Total count for hasMore
+  const countRow = await (queryOne as any)(
+    `SELECT COUNT(*) AS total FROM expenses WHERE group_id = $1`, [groupId]
+  );
+  const total = Number((countRow as any)?.total ?? 0);
+
   const expenses = await query(
     `SELECT e.id, e.description, e.amount, e.currency, e.category,
             e.paid_by, e.split_mode, e.is_personal, e.date, e.created_at,
@@ -37,13 +48,14 @@ router.get('/', async (req: Request, res: Response) => {
      FROM expenses e
      LEFT JOIN users u ON u.id = e.paid_by
      WHERE e.group_id = $1
-     ORDER BY e.date DESC`,
-    [groupId]
+     ORDER BY e.date DESC
+     LIMIT $2 OFFSET $3`,
+    [groupId, limit, offset]
   );
 
   const settlements = await query(
     `SELECT s.id, 'Settlement: ' || u1.name || ' paid ' || u2.name as description, s.amount, 'INR' as currency, 'settlement' as category,
-            s.from_user_id as paid_by, 'custom' as split_mode, s.created_at as date, s.created_at,
+            s.from_user_id as paid_by, 'custom' as split_mode, false as is_personal, s.created_at as date, s.created_at,
             u1.name AS paid_by_name, u1.color AS paid_by_color,
             json_build_array(json_build_object(
               'userId', s.to_user_id, 'amount', s.amount,
@@ -52,12 +64,21 @@ router.get('/', async (req: Request, res: Response) => {
      FROM settlements s
      JOIN users u1 ON u1.id = s.from_user_id
      JOIN users u2 ON u2.id = s.to_user_id
-     WHERE s.group_id = $1`,
-    [groupId]
+     WHERE s.group_id = $1
+     ORDER BY s.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [groupId, limit, offset]
   );
 
   const allData = [...expenses, ...settlements].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  res.json(allData);
+
+  res.json({
+    data: allData,
+    page,
+    limit,
+    total,
+    hasMore: offset + limit < total,
+  });
 });
 
 // ── POST /groups/:id/expenses ─────────────────────────────────
