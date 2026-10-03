@@ -9,17 +9,22 @@ import {
 } from 'react-native';
 import { TouchableRipple } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
-import { FloatingTabBar } from '../components';
+import { FloatingTabBar, Skeleton } from '../components';
 import { useAuthStore } from '../store/useAuthStore';
 import { useStore } from '../store/useStore';
 import { api } from '../api/client';
+import { RootStackParamList } from '../types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Route = RouteProp<RootStackParamList, 'Settlement'>;
 
 export default function SettlementScreen() {
-  const nav = useNavigation<any>();
-  const route = useRoute<any>();
+  const nav = useNavigation<Nav>();
+  const route = useRoute<Route>();
   const t = useTheme();
   
   const user = useAuthStore(s => s.user);
@@ -68,9 +73,16 @@ export default function SettlementScreen() {
   };
 
   const handleSettleUp = async (toUserId: string, amount: number, name: string, upiId?: string) => {
-    // 1. Trigger UPI App
-    const payeeUpi = upiId || 'test@upi';
-    const upiUrl = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=SplitWise%20Settlement`;
+    // 1. Trigger UPI App — only if recipient has a valid UPI ID
+    if (!upiId) {
+      Alert.alert(
+        'No UPI ID Found',
+        `${name} hasn't set up their UPI ID yet. Ask them to add it in their Account settings, or settle manually.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=SplitWise%20Settlement`;
     try {
       await Linking.openURL(upiUrl);
     } catch (err) {
@@ -158,7 +170,38 @@ export default function SettlementScreen() {
         </View>
 
         {loading && !data ? (
-          <ActivityIndicator size="large" color={t.primary} style={{ marginTop: 40 }} />
+          <View style={{ paddingVertical: 16 }}>
+            {/* Ghost UI for Status Card */}
+            <Skeleton width="100%" height={160} borderRadius={24} />
+            
+            {/* Ghost UI for Section Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 }}>
+              <Skeleton width={120} height={24} borderRadius={4} />
+              <Skeleton width={60} height={24} borderRadius={12} />
+            </View>
+
+            {/* Ghost UI for Person Cards */}
+            <View style={{ gap: 12 }}>
+              {[1, 2].map((k) => (
+                <View key={k} style={[styles.personCard, { backgroundColor: t.surface, padding: 16 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <Skeleton width={48} height={48} borderRadius={24} />
+                    <View style={{ flex: 1, gap: 8 }}>
+                       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                         <Skeleton width={100} height={20} borderRadius={4} />
+                         <Skeleton width={60} height={20} borderRadius={4} />
+                       </View>
+                       <Skeleton width="60%" height={16} borderRadius={4} />
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                    <Skeleton width="48%" height={40} borderRadius={12} />
+                    <Skeleton width="48%" height={40} borderRadius={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
         ) : activeTab === 'balances' ? (
           <>
             {/* Balance Status Card */}

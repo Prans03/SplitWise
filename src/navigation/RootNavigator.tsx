@@ -8,6 +8,7 @@ import { RootStackParamList } from '../types';
 
 import HomeScreen       from '../screens/HomeScreen';
 import ActivityScreen   from '../screens/ActivityScreen';
+import AnalyticsScreen  from '../screens/AnalyticsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import SettlementScreen from '../screens/SettlementScreen';
@@ -16,6 +17,8 @@ import SettingsScreen   from '../screens/SettingsScreen';
 import AccountScreen    from '../screens/AccountScreen';
 import GroupInviteScreen from '../screens/GroupInviteScreen';
 import ScanScreen       from '../screens/ScanScreen';
+import BudgetConfigScreen from '../screens/BudgetConfigScreen';
+import BudgetCalendarScreen from '../screens/BudgetCalendarScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -34,6 +37,7 @@ export default function RootNavigator() {
     >
       <Stack.Screen name="Home"        component={HomeScreen} />
       <Stack.Screen name="Activity"    component={ActivityScreen} />
+      <Stack.Screen name="Analytics"   component={AnalyticsScreen} />
       <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
       <Stack.Screen
         name="AddExpense"
@@ -64,12 +68,12 @@ export default function RootNavigator() {
       />
       <Stack.Screen
         name="BudgetConfig"
-        component={require('../screens/BudgetConfigScreen').default}
+        component={BudgetConfigScreen}
         options={{ animation: 'slide_from_bottom', contentStyle: { backgroundColor: t.background } }}
       />
       <Stack.Screen
         name="BudgetCalendar"
-        component={require('../screens/BudgetCalendarScreen').default}
+        component={BudgetCalendarScreen}
         options={{ animation: 'fade_from_bottom', contentStyle: { backgroundColor: t.background } }}
       />
     </Stack.Navigator>

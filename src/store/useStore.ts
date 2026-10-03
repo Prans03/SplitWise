@@ -29,6 +29,7 @@ export interface Expense {
   paidByName: string; paidByColor: string;
   splitMode: string; splits: ExpenseSplit[];
   date: string; createdAt: string;
+  isPersonal?: boolean;
 }
 
 export type PaletteId = 'buckwheat' | 'ocean' | 'blossom' | 'forest' | 'ember' | 'midnight' | 'sunflower' | 'grape';
@@ -65,6 +66,8 @@ interface StoreState {
     groupId: string; description: string; amount: number;
     category: string; paidById: string; splitMode: string; splitMemberIds: string[];
     customSplits?: Array<{userId: string; amount: number}>;
+    date?: string;
+    isPersonal?: boolean;
   }) => Promise<Expense | null>;
   deleteExpense: (groupId: string, expenseId: string) => Promise<void>;
 
@@ -177,22 +180,25 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
         splits: e.splits ?? [],
         date: e.date,
         createdAt: e.created_at,
+        isPersonal: e.is_personal ?? false,
       }));
       set((s) => ({ expenses: { ...s.expenses, [groupId]: expenses } }));
     }
   },
 
   // ── Add expense (optimistic Local-First) ──────────────────────────────
-  addExpense: async ({ groupId, description, amount, category, paidById, splitMode, splitMemberIds, customSplits }) => {
+  addExpense: async ({ groupId, description, amount, category, paidById, splitMode, splitMemberIds, customSplits, date, isPersonal }) => {
     const tempId = 'temp-' + Math.random().toString(36).substring(2);
     
     const group = get().groups.find(g => g.id === groupId);
     const user = group?.members?.find(m => m.id === paidById);
+    const finalDate = date || new Date().toISOString();
     
     const optimisticExpense: Expense = {
       id: tempId, groupId, description, amount, currency: 'INR', category,
       paidById, paidByName: user?.name ?? 'Unknown', paidByColor: user?.color ?? '#888',
-      splitMode, splits: [], date: new Date().toISOString(), createdAt: new Date().toISOString(),
+      splitMode, splits: [], date: finalDate, createdAt: new Date().toISOString(),
+      isPersonal: isPersonal ?? false,
     };
     
     set((s) => ({
@@ -201,7 +207,8 @@ export const useStore = create<StoreState>()(persist((set, get) => ({
 
     try {
       const res = await api.post<any>(`/groups/${groupId}/expenses`, {
-        description, amount, category, paidById, splitMode, splitMemberIds, customSplits
+        description, amount, category, paidById, splitMode, splitMemberIds, customSplits,
+        date: finalDate, isPersonal: isPersonal ?? false
       });
       if (res.data) {
         set((s) => {

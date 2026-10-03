@@ -199,7 +199,7 @@ export default function GroupDetailScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 24, paddingHorizontal: 16, paddingVertical: 4, elevation: 2, shadowColor: t.onBackground, shadowOpacity: 0.05, shadowRadius: 8 }}>
           <MaterialIcons name="auto-awesome" size={20} color={t.primary} />
           <TextInput
-            style={{ flex: 1, height: 48, marginLeft: 12, fontSize: 15, color: t.onSurface }}
+            style={{ flex: 1, height: 48, marginLeft: 12, fontSize: 15, color: t.onSurface, opacity: isQuickAdding ? 0 : 1 }}
             placeholder="E.g. I paid ₹500 for pizza for everyone"
             placeholderTextColor={t.onSurfaceVariant}
             value={quickAddText}
@@ -208,7 +208,11 @@ export default function GroupDetailScreen() {
             onSubmitEditing={handleQuickAdd}
             returnKeyType="send"
           />
-          {isQuickAdding && <Text style={{ fontSize: 12, color: t.primary, fontWeight: '700' }}>THINKING...</Text>}
+          {isQuickAdding && (
+            <View style={{ position: 'absolute', left: 44, right: 16 }}>
+              <Skeleton width="100%" height={20} borderRadius={4} />
+            </View>
+          )}
         </View>
       </View>
 

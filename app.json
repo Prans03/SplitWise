@@ -38,7 +38,8 @@
           "cameraPermission": "SplitWise needs camera access to scan QR codes for joining groups and adding members."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

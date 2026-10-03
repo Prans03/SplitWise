@@ -24,7 +24,7 @@ router.get('/', async (req: Request, res: Response) => {
 
   const expenses = await query(
     `SELECT e.id, e.description, e.amount, e.currency, e.category,
-            e.paid_by, e.split_mode, e.date, e.created_at,
+            e.paid_by, e.split_mode, e.is_personal, e.date, e.created_at,
             u.name AS paid_by_name, u.color AS paid_by_color,
             (SELECT json_agg(json_build_object(
               'userId', es.user_id, 'amount', es.amount,
@@ -36,7 +36,8 @@ router.get('/', async (req: Request, res: Response) => {
             ) AS splits
      FROM expenses e
      LEFT JOIN users u ON u.id = e.paid_by
-     WHERE e.group_id = $1`,
+     WHERE e.group_id = $1
+     ORDER BY e.date DESC`,
     [groupId]
   );
 
@@ -64,7 +65,7 @@ router.post('/', async (req: Request, res: Response) => {
   const { id: groupId } = req.params;
   if (!await assertMember(groupId, req.user!.id, res)) return;
 
-  const { description, amount, category = 'other', paidById, splitMode = 'equally', splitMemberIds, customSplits, date } = req.body ?? {};
+  const { description, amount, category = 'other', paidById, splitMode = 'equally', splitMemberIds, customSplits, date, isPersonal = false } = req.body ?? {};
 
   if (!description?.trim()) { res.status(400).json({ error: 'description required' }); return; }
   if (!amount || Number(amount) <= 0) { res.status(400).json({ error: 'amount must be positive' }); return; }
@@ -72,10 +73,10 @@ router.post('/', async (req: Request, res: Response) => {
 
   const expenseId = uuidv4();
   const expense = await queryOne(
-    `INSERT INTO expenses (id, group_id, description, amount, category, paid_by, split_mode, date, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8::timestamptz, NOW()),$9)
-     RETURNING id, description, amount, currency, category, paid_by, split_mode, date, created_at`,
-    [expenseId, groupId, description.trim(), Number(amount), category, paidById, splitMode, date ?? null, req.user!.id]
+    `INSERT INTO expenses (id, group_id, description, amount, category, paid_by, split_mode, is_personal, date, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz, NOW()),$10)
+     RETURNING id, description, amount, currency, category, paid_by, split_mode, is_personal, date, created_at`,
+    [expenseId, groupId, description.trim(), Number(amount), category, paidById, splitMode, Boolean(isPersonal), date ?? null, req.user!.id]
   );
 
   // Compute splits
@@ -102,7 +103,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
   }
 
-  const full = { ...expense as any, splits };
+  const full = { ...expense as any, splits, is_personal: Boolean(isPersonal) };
   broadcastToGroup(groupId, { type: 'expense.created', groupId, expense: full }, req.user!.id);
   res.status(201).json(full);
 });

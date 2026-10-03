@@ -6,14 +6,16 @@ import { useTheme } from '../theme';
 import { RootStackParamList } from '../types';
 import { useStore } from '../store/useStore';
 
+import { MaterialIcons } from '@expo/vector-icons';
+
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'groups' | 'activity' | 'settle' | 'settings';
 
-const tabs: Array<{ id: Tab; icon: string; label: string }> = [
-  { id: 'groups', icon: '♧', label: 'Groups' },
-  { id: 'activity', icon: '▤', label: 'Activity' },
-  { id: 'settle', icon: '↔', label: 'Settle Up' },
-  { id: 'settings', icon: '☷', label: 'Settings' },
+const tabs: Array<{ id: Tab; icon: keyof typeof MaterialIcons.glyphMap; label: string }> = [
+  { id: 'groups', icon: 'groups', label: 'Groups' },
+  { id: 'activity', icon: 'receipt-long', label: 'Activity' },
+  { id: 'settle', icon: 'sync-alt', label: 'Settle' },
+  { id: 'settings', icon: 'settings', label: 'Settings' },
 ];
 
 import { BlurView } from 'expo-blur';
@@ -45,8 +47,8 @@ export function FloatingTabBar({ active }: { active: Tab }) {
           return (
             <Pressable key={tab.id} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onPress(tab.id)}
               style={[styles.item, selected && { backgroundColor: t.secondaryContainer }]}>
-              <Text style={[styles.icon, { color: selected ? t.primary : t.onSurfaceVariant }]}>{tab.icon}</Text>
-              {selected && <Text style={[styles.label, { color: t.onSecondaryContainer }]}>{tab.label}</Text>}
+              <MaterialIcons name={tab.icon} size={22} color={selected ? t.primary : t.onSurfaceVariant} />
+              <Text style={[styles.label, { color: selected ? t.onSecondaryContainer : t.onSurfaceVariant }]}>{tab.label}</Text>
             </Pressable>
           );
         })}
@@ -57,8 +59,7 @@ export function FloatingTabBar({ active }: { active: Tab }) {
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 0, right: 0, bottom: 18, alignItems: 'center' },
-  bar: { height: 66, width: '90%', maxWidth: 430, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, elevation: 10, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 22 },
-  item: { minWidth: 46, height: 46, borderRadius: 999, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  icon: { fontSize: 21, fontWeight: '800' },
-  label: { fontSize: 12, fontWeight: '800' },
+  bar: { height: 66, width: '90%', maxWidth: 430, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', borderWidth: 1, borderRadius: 24, paddingHorizontal: 4, elevation: 10, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 22 },
+  item: { flex: 1, height: 54, borderRadius: 18, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  label: { fontSize: 10, fontWeight: '700' },
 });

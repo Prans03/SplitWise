@@ -12,6 +12,7 @@ export type AuthStackParamList = {
 export type RootStackParamList = {
   Home:        undefined;
   Activity:    undefined;
+  Analytics:   undefined;
   GroupDetail: { groupId: string };
   AddExpense:  { groupId: string; defaultDesc?: string; defaultAmt?: number; defaultCat?: string };
   Settlement:  { groupId: string };
@@ -61,4 +62,5 @@ export interface Expense {
   splits?: ExpenseSplit[];
   date: string;
   createdAt: string;
+  isPersonal?: boolean;
 }

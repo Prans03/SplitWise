@@ -2,7 +2,7 @@
 // HomeScreen – Buckwheat exact UI (Stitch replica)
 // Gradient Hero card · Quick Log · Active Circles
 // ============================================================
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   StatusBar, Animated, Pressable, RefreshControl, TextInput
@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedFAB, ProgressBar } from 'react-native-paper';
 import { useStore } from '../store/useStore';
@@ -18,6 +19,7 @@ import { GroupCard, EmptyState, FloatingTabBar } from '../components';
 import { RootStackParamList } from '../types';
 import { formatINR } from '../utils/settlement';
 import { useAuthStore } from '../store/useAuthStore';
+import { useQuickLogs } from '../hooks/useQuickLogs';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -27,6 +29,7 @@ export default function HomeScreen() {
   const groups = useStore((s) => s.groups);
   const expenses = useStore((s) => s.expenses);
   const fetchGroups = useStore((s) => s.fetchGroups);
+  const addExpense = useStore((s) => s.addExpense);
   const isSyncing = useStore((s) => s.isSyncing);
   const user = useAuthStore((s) => s.user);
 
@@ -48,56 +51,80 @@ export default function HomeScreen() {
 
   const stats = useMemo(() => {
     const today = new Date().toDateString();
-    const todaySpent = allExpenses
-      .filter((e) => new Date(e.date).toDateString() === today)
+    const userId = user?.id;
+
+    // Personal expenses = where I am the sole split recipient (paid by me for myself only)
+    const personalExpenses = allExpenses.filter(e =>
+      e.paidById === userId &&
+      e.splits.length === 1 &&
+      e.splits[0].userId === userId
+    );
+
+    // Personal spend this month
+    const thisMonth = new Date().getMonth();
+    const thisYear = new Date().getFullYear();
+    const personalMonthSpend = personalExpenses
+      .filter(e => {
+        const d = new Date(e.date);
+        return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+      })
       .reduce((s, e) => s + e.amount, 0);
-    const totalSpent = allExpenses.reduce((s, e) => s + e.amount, 0);
-    return { todaySpent, totalSpent };
-  }, [allExpenses]);
 
-  // Safe Spend budget calc
-  const leftToday = Math.max(0, dailyBudget - stats.todaySpent);
-  const progress = Math.min(100, Math.max(0, (leftToday / dailyBudget) * 100));
+    // Today's total spend (personal + shared I paid for)
+    const todaySpent = allExpenses
+      .filter(e => new Date(e.date).toDateString() === today && e.paidById === userId)
+      .reduce((s, e) => s + e.amount, 0);
 
-  // Overall Net Balance
+    return { todaySpent, personalMonthSpend };
+  }, [allExpenses, user?.id]);
+
+  // Net group balance: positive = others owe me, negative = I owe
   const totalBalance = useMemo(() => {
-    return groups.reduce((acc, g) => acc + (g.totalSpent || 0), 0);
-  }, [groups]);
-  const balanceText = totalBalance === 0 ? 'Settled up' : totalBalance < 0 ? `You owe ${formatINR(Math.abs(totalBalance))}` : `Gets back ${formatINR(totalBalance)}`;
-  const balanceColor = totalBalance === 0 ? t.surfaceVariant : totalBalance < 0 ? t.errorContainer : t.secondaryContainer;
-  const balanceTextColor = totalBalance === 0 ? t.onSurfaceVariant : totalBalance < 0 ? t.error : t.onSecondaryContainer;
-
-  const quickLogs = useMemo(() => {
-    if (allExpenses.length === 0) {
-      return [
-        { icon: '☕', name: 'Chai', amt: 50 },
-        { icon: '🍛', name: 'Lunch', amt: 120 },
-        { icon: '🛒', name: 'Groceries', amt: 200 }
-      ];
-    }
-    const counts: Record<string, { count: number; amt: number; category: string }> = {};
+    if (!user?.id) return 0;
+    let net = 0;
     allExpenses.forEach(e => {
-      const key = e.description.toLowerCase().trim();
-      if (!key) return;
-      if (!counts[key]) counts[key] = { count: 0, amt: e.amount, category: e.category };
-      counts[key].count++;
+      // Skip personal-only expenses
+      if (e.splits.length === 1 && e.splits[0].userId === user.id) return;
+      const myShare = e.splits.find(s => s.userId === user.id)?.amount ?? 0;
+      if (e.paidById === user.id) {
+        // I paid – others owe me the amount minus my own share
+        net += (e.amount - myShare);
+      } else {
+        // Someone else paid – I owe my share
+        net -= myShare;
+      }
     });
-    const sorted = Object.entries(counts).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
-    if (sorted.length === 0) return [{ icon: '☕', name: 'Chai', amt: 50 }];
+    return net;
+  }, [allExpenses, user?.id]);
 
-    return sorted.map(([name, data]) => ({
-      icon: data.category === 'food' ? '🍽️' : data.category === 'transport' ? '🚗' : '📦',
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      amt: data.amt,
-      category: data.category
-    }));
-  }, [allExpenses]);
+  // Safe Spend budget calc (used in hero card budget bar)
+  const leftToday = Math.max(0, dailyBudget - stats.todaySpent);
+  const progress = Math.min(100, Math.max(0, dailyBudget > 0 ? (leftToday / dailyBudget) * 100 : 0));
+
+  // Replace inline quickLog computation with shared hook (personal expenses only)
+  const quickLogs = useQuickLogs(allExpenses, user?.id);
 
   const [activeQuickLog, setActiveQuickLog] = React.useState<any>(null);
+  const [toastMsg, setToastMsg] = React.useState<string | null>(null);
 
-  const handleQuickLogPress = (item: any) => {
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  }, []);
+
+  const handleQuickLogPress = async (item: any) => {
     if (groups.length === 1) {
-      nav.navigate('AddExpense', { groupId: groups[0].id, defaultDesc: item.name, defaultAmt: item.amt, defaultCat: item.category });
+      const g = groups[0];
+      await addExpense({
+        groupId: g.id,
+        description: item.name,
+        amount: item.amt,
+        category: item.category,
+        paidById: user!.id,
+        splitMode: 'equally',
+        splitMemberIds: g.members?.map(m => m.id) || [user!.id]
+      });
+      showToast(`Logged ₹${item.amt} for ${item.name}!`);
     } else if (groups.length > 1) {
       setActiveQuickLog(item);
     } else {
@@ -124,6 +151,16 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.background }]} edges={['top']}>
       <StatusBar barStyle={t.isDark ? 'light-content' : 'dark-content'} backgroundColor={t.background} />
+
+      {/* Instant Toast */}
+      {toastMsg && (
+        <View style={{ position: 'absolute', top: 60, left: 16, right: 16, backgroundColor: t.primaryContainer, padding: 16, borderRadius: 12, elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, zIndex: 100 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <MaterialIcons name="check-circle" size={24} color={t.primary} />
+            <Text style={{ flex: 1, color: t.onPrimaryContainer, fontSize: 14, fontWeight: '700' }}>{toastMsg}</Text>
+          </View>
+        </View>
+      )}
 
       {/* ── Top Header ──────────────────────── */}
       <View style={styles.header}>
@@ -183,26 +220,56 @@ export default function HomeScreen() {
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={fetchGroups} tintColor={t.primary} />}
       >
-        {/* ── Gradient Hero (Daily Safe Spend) ──────────────── */}
-        <TouchableOpacity activeOpacity={0.9} onPress={() => nav.navigate('BudgetConfig')}>
+        {/* ── Dual-Stat Hero Card ──────────────────────────────── */}
+        <TouchableOpacity activeOpacity={0.9} onPress={() => nav.navigate('Analytics')}>
           <LinearGradient
-            colors={[t.primaryContainer, t.primary, '#283e1d']} // Custom gradient
+            colors={[t.primaryContainer, t.primary, '#283e1d']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={[styles.heroCard, { shadowColor: t.primary }]}
           >
-            <View style={styles.heroTop}>
-              <Text style={[styles.heroLabel, { color: t.primaryLight }]}>DAILY SAFE SPEND</Text>
-              <View style={[styles.heroBadge, { backgroundColor: balanceColor }]}>
-                <Text style={[styles.heroBadgeText, { color: balanceTextColor }]}>{balanceText}</Text>
+            {/* Row: two stat pillars */}
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {/* Left – Group Balance */}
+              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 16, padding: 14 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>GROUP BALANCE</Text>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={[
+                    { fontSize: 20, fontWeight: '900', color: totalBalance < 0 ? '#ff8a80' : totalBalance === 0 ? 'rgba(255,255,255,0.6)' : '#b9f6ca' },
+                  ]}
+                >
+                  {totalBalance === 0 ? 'Settled' : (totalBalance < 0 ? '-' : '+') + formatINR(Math.abs(totalBalance))}
+                </Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4, fontWeight: '600' }}>
+                  {totalBalance < 0 ? 'you owe' : totalBalance === 0 ? 'all clear' : 'you get back'}
+                </Text>
+              </View>
+
+              {/* Right – Personal Spend this month */}
+              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 16, padding: 14 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>MY SPEND (MTD)</Text>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{ fontSize: 20, fontWeight: '900', color: '#fff' }}
+                >
+                  {formatINR(stats.personalMonthSpend)}
+                </Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4, fontWeight: '600' }}>personal this month</Text>
               </View>
             </View>
-            <View style={styles.heroMid}>
-              <Text style={[styles.heroAmount, { color: t.onPrimary }]}>{formatINR(leftToday)}</Text>
-              <Text style={[styles.heroSub, { color: t.primaryLight }]}>left today</Text>
-            </View>
-            <View style={{ marginTop: 16 }}>
-              <ProgressBar progress={progress / 100} color={t.primaryLight} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 4, height: 8 }} />
-            </View>
+
+            {/* Budget bar at bottom */}
+            {dailyBudget > 0 && (
+              <View style={{ marginTop: 14 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1, color: 'rgba(255,255,255,0.6)' }}>DAILY SAFE SPEND</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.9)' }}>{formatINR(leftToday)} left</Text>
+                </View>
+                <ProgressBar progress={progress / 100} color={t.primaryLight} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 4, height: 6 }} />
+              </View>
+            )}
           </LinearGradient>
         </TouchableOpacity>
 
@@ -238,7 +305,19 @@ export default function HomeScreen() {
               subtitle={isSearching ? "No groups match your search." : "Create a group to track expenses."}
             />
           ) : (
-            filteredGroups.map((g) => (
+          filteredGroups.map((g) => {
+              // Compute actual net balance for this user in this group from local expense data
+              const groupExpenses = expenses[g.id] ?? [];
+              let groupNet = 0;
+              groupExpenses.forEach(e => {
+                if (e.isPersonal || (e.splits && e.splits.length === 1 && e.splits[0]?.userId === user?.id)) return;
+                const myShare = e.splits?.find(s => s.userId === user?.id)?.amount ?? 0;
+                if (e.paidById === user?.id) groupNet += (e.amount - myShare);
+                else groupNet -= myShare;
+              });
+              const isOwed = groupNet > 0;
+              const isOwing = groupNet < 0;
+              return (
               <TouchableOpacity
                 key={g.id}
                 activeOpacity={0.8}
@@ -250,15 +329,18 @@ export default function HomeScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.circleName, { color: t.onSurface }]}>{g.name}</Text>
-                  <Text style={[styles.circleRole, { color: t.onSurfaceVariant }]}>Your share {formatINR(g.totalSpent ?? 0)}</Text>
+                  <Text style={[styles.circleRole, { color: t.onSurfaceVariant }]}>
+                    {g.memberCount} member{g.memberCount !== 1 ? 's' : ''}
+                  </Text>
                 </View>
-                <View style={[styles.circleBadge, { backgroundColor: (g.totalSpent ?? 0) < 0 ? t.errorContainer : t.secondaryContainer }]}>
-                  <Text style={[styles.circleBadgeText, { color: (g.totalSpent ?? 0) < 0 ? t.error : t.onSecondaryContainer }]}>
-                    {(g.totalSpent ?? 0) < 0 ? `You owe ${formatINR(Math.abs(g.totalSpent ?? 0))}` : `+${formatINR(g.totalSpent ?? 0)} balance`}
+                <View style={[styles.circleBadge, { backgroundColor: isOwing ? t.errorContainer : isOwed ? t.secondaryContainer : t.surfaceVariant }]}>
+                  <Text style={[styles.circleBadgeText, { color: isOwing ? t.error : isOwed ? t.onSecondaryContainer : t.onSurfaceVariant }]}>
+                    {isOwing ? `You owe ${formatINR(Math.abs(groupNet))}` : isOwed ? `+${formatINR(groupNet)}` : 'Settled'}
                   </Text>
                 </View>
               </TouchableOpacity>
-            ))
+            );
+            })
           )}
         </View>
 
@@ -290,13 +372,22 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={g.id}
                   style={[styles.modalRow, { borderBottomColor: t.surfaceVariant }]}
-                  onPress={() => {
+                  onPress={async () => {
                     const log = activeQuickLog;
                     setActiveQuickLog(null);
                     if (log.isCustom) {
                       nav.navigate('AddExpense', { groupId: g.id });
                     } else {
-                      nav.navigate('AddExpense', { groupId: g.id, defaultDesc: log.name, defaultAmt: log.amt, defaultCat: log.category });
+                      await addExpense({
+                        groupId: g.id,
+                        description: log.name,
+                        amount: log.amt,
+                        category: log.category,
+                        paidById: user!.id,
+                        splitMode: 'equally',
+                        splitMemberIds: g.members?.map(m => m.id) || [user!.id]
+                      });
+                      showToast(`Logged ₹${log.amt} for ${log.name}!`);
                     }
                   }}
                 >

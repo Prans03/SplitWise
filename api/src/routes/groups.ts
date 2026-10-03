@@ -16,13 +16,33 @@ router.get('/', async (req: Request, res: Response) => {
     `SELECT g.id, g.name, g.emoji, g.created_at, g.updated_at,
             gm.role,
             (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS member_count,
-            (SELECT COALESCE(SUM(amount),0) FROM expenses WHERE group_id = g.id) AS total_spent
+            (
+              -- Net balance for the requesting user: positive = others owe them, negative = they owe
+              COALESCE((
+                SELECT SUM(e.amount) - SUM(COALESCE(my_split.amount, 0))
+                FROM expenses e
+                LEFT JOIN expense_splits my_split ON my_split.expense_id = e.id AND my_split.user_id = $1
+                WHERE e.group_id = g.id AND e.paid_by = $1 AND e.is_personal = FALSE
+              ), 0)
+              -
+              COALESCE((
+                SELECT SUM(es.amount)
+                FROM expense_splits es
+                JOIN expenses e ON e.id = es.expense_id
+                WHERE e.group_id = g.id AND e.paid_by != $1 AND es.user_id = $1 AND e.is_personal = FALSE
+              ), 0)
+            ) AS user_net_balance
      FROM groups g
      JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
      ORDER BY g.updated_at DESC`,
     [req.user!.id]
   );
-  res.json(groups);
+  // Map user_net_balance → totalSpent field expected by frontend
+  const mapped = (groups as any[]).map(g => ({
+    ...g,
+    total_spent: Number(g.user_net_balance ?? 0),
+  }));
+  res.json(mapped);
 });
 
 // ── POST /groups ──────────────────────────────────────────────

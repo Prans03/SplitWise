@@ -190,11 +190,20 @@ export default function ActivityScreen() {
             <View style={[styles.bottomRibbon, { backgroundColor: t.surfaceVariant + '66' }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <View style={styles.avatarStack}>
-                  <View style={[styles.miniAvatar, { backgroundColor: t.primaryContainer, zIndex: 3 }]}><Text style={styles.miniAvatarText}>P</Text></View>
-                  <View style={[styles.miniAvatar, { backgroundColor: t.secondaryContainer, zIndex: 2, marginLeft: -8 }]}><Text style={styles.miniAvatarText}>V</Text></View>
-                  <View style={[styles.miniAvatar, { backgroundColor: t.tertiaryContainer, zIndex: 1, marginLeft: -8 }]}><Text style={styles.miniAvatarText}>R</Text></View>
+                  {(item.splits || []).slice(0, 3).map((split: any, idx: number) => (
+                    <View key={split.userId} style={[styles.miniAvatar, { backgroundColor: split.color || t.primaryContainer, zIndex: 3 - idx, marginLeft: idx > 0 ? -8 : 0 }]}>
+                      <Text style={styles.miniAvatarText}>{split.name ? split.name.charAt(0).toUpperCase() : '?'}</Text>
+                    </View>
+                  ))}
+                  {(item.splits?.length || 0) > 3 && (
+                    <View style={[styles.miniAvatar, { backgroundColor: t.surfaceVariant, zIndex: 0, marginLeft: -8 }]}>
+                      <Text style={styles.miniAvatarText}>+{(item.splits?.length || 0) - 3}</Text>
+                    </View>
+                  )}
                 </View>
-                <Text style={[styles.ribbonText, { color: t.onSurfaceVariant }]}>Split equally ({shares})</Text>
+                <Text style={[styles.ribbonText, { color: t.onSurfaceVariant }]}>
+                  {item.splitMode === 'custom' ? `Custom split (${shares})` : `Split equally (${shares})`}
+                </Text>
               </View>
               <TouchableOpacity style={styles.receiptBtn}>
                 <MaterialIcons name="receipt" size={18} color={t.outline} />

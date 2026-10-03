@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, StatusBar, Image, TouchableOpacity, Alert
+  KeyboardAvoidingView, Platform, StatusBar, Image, TouchableOpacity, Alert, Modal
 } from 'react-native';
 import { TouchableRipple } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,11 +13,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, { LinearTransition } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../api/client';
 import { useStore, User } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useTheme } from '../theme';
 import { RootStackParamList } from '../types';
+import { Skeleton } from '../components';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AddExpense'>;
@@ -37,13 +39,13 @@ export default function AddExpenseScreen() {
 
   const user = useAuthStore((s) => s.user);
 
-  const [amountStr, setAmountStr] = useState(defaultAmt ? String(defaultAmt) : '1200');
+  const [amountStr, setAmountStr] = useState(defaultAmt ? String(defaultAmt) : '');
   const [desc,      setDesc]      = useState(defaultDesc || '');
   const [category,  setCategory]  = useState(defaultCat || 'groceries');
   const [paidBy,    setPaidBy]    = useState(user?.id || members[0]?.id || '1');
   const [splitMode, setSplitMode] = useState('equally');
+  const [isPersonal, setIsPersonal] = useState(false);
   
-  // State for toggling members in equal split
   // State for toggling members in equal split
   const [includedIds, setIncludedIds] = useState<string[]>([]);
   // State for custom split amounts
@@ -52,6 +54,12 @@ export default function AddExpenseScreen() {
   // AI states
   const [isScanning, setIsScanning] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
+  const [showReceiptPicker, setShowReceiptPicker] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Date state
+  const [expenseDate, setExpenseDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     // If members are empty, fetch the group detail to populate them
@@ -79,37 +87,51 @@ export default function AddExpenseScreen() {
     );
   };
 
-  const handleScanReceipt = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      base64: true,
-      quality: 0.5,
-    });
-    if (!result.canceled && result.assets[0].base64) {
-      setIsScanning(true);
-      try {
-        const res = await api.post<{ items: { description: string, amount: number }[] }>('/ai/receipt', {
-          base64Image: result.assets[0].base64,
-          mimeType: result.assets[0].mimeType || 'image/jpeg'
+  const handleScanReceipt = () => {
+    setShowReceiptPicker(true);
+  };
+
+  const launchCamera = async () => {
+    setShowReceiptPicker(false);
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], base64: true, quality: 0.5 });
+    if (!result.canceled && result.assets[0].base64) processReceipt(result.assets[0].base64, result.assets[0].mimeType);
+  };
+
+  const launchGallery = async () => {
+    setShowReceiptPicker(false);
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.5 });
+    if (!result.canceled && result.assets[0].base64) processReceipt(result.assets[0].base64, result.assets[0].mimeType);
+  };
+
+  const processReceipt = async (base64: string, mimeType: string | undefined) => {
+    setIsScanning(true);
+    try {
+      const res = await api.post<{ items: { description: string, amount: number }[] }>('/ai/receipt', {
+        base64Image: base64,
+        mimeType: mimeType || 'image/jpeg'
+      });
+      if (res.data && res.data.items && res.data.items.length > 0) {
+        let total = 0;
+        let descParts: string[] = [];
+        res.data.items.forEach(item => {
+          total += parseFloat(item.amount as any) || 0;
+          descParts.push(item.description);
         });
-        if (res.data && res.data.items && res.data.items.length > 0) {
-          let total = 0;
-          let descParts: string[] = [];
-          res.data.items.forEach(item => {
-            total += parseFloat(item.amount as any) || 0;
-            descParts.push(item.description);
-          });
-          setAmountStr(total.toFixed(2));
-          setDesc('🧾 ' + descParts.slice(0, 3).join(', ') + (descParts.length > 3 ? '...' : ''));
-        } else {
-          Alert.alert('Scan failed', 'Could not read receipt items.');
-        }
-      } catch (e) {
-        Alert.alert('Scan Error', 'Something went wrong while connecting to Gemini AI.');
-      } finally {
-        setIsScanning(false);
+        setAmountStr(total.toFixed(2));
+        setDesc('🧾 ' + descParts.slice(0, 3).join(', ') + (descParts.length > 3 ? '...' : ''));
+      } else {
+        showError('Could not read receipt items. Try taking a clearer photo.');
       }
+    } catch (e: any) {
+      showError(e.message || 'Something went wrong while connecting to Gemini AI.');
+    } finally {
+      setIsScanning(false);
     }
+  };
+
+  const showError = (msg: string) => {
+    setAiError(msg);
+    setTimeout(() => setAiError(null), 4000);
   };
 
   const handleAutoCategorize = async () => {
@@ -123,8 +145,9 @@ export default function AddExpenseScreen() {
            setDesc(`${res.data.emoji} ${desc}`);
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.log('Categorize failed', e);
+      showError(e.message || 'Failed to reach AI Server.');
     } finally {
       setIsCategorizing(false);
     }
@@ -135,7 +158,9 @@ export default function AddExpenseScreen() {
     if (amount <= 0) return;
     
     let finalCustomSplits: Array<{userId: string, amount: number}> = [];
-    if (splitMode === 'custom') {
+    if (isPersonal) {
+      finalCustomSplits = [{ userId: user!.id, amount: amount }];
+    } else if (splitMode === 'custom') {
       let totalCustom = 0;
       for (const m of members) {
         const val = parseFloat(customSplits[m.id]) || 0;
@@ -158,9 +183,11 @@ export default function AddExpenseScreen() {
       amount, 
       category, 
       paidById: paidBy, 
-      splitMode, 
-      splitMemberIds: splitMode === 'equally' ? includedIds : [],
-      customSplits: splitMode === 'custom' ? finalCustomSplits : undefined
+      splitMode: isPersonal ? 'custom' : splitMode, 
+      splitMemberIds: (!isPersonal && splitMode === 'equally') ? includedIds : [],
+      customSplits: (isPersonal || splitMode === 'custom') ? finalCustomSplits : undefined,
+      date: expenseDate.toISOString(),
+      isPersonal,
     });
     nav.goBack();
   };
@@ -176,8 +203,8 @@ export default function AddExpenseScreen() {
              <MaterialIcons name="business" size={20} color={t.onSecondaryContainer} />
           </View>
           <View>
-            <Text style={[styles.headerSub, { color: t.onSurfaceVariant }]}>SHARED LEDGER</Text>
-            <Text style={[styles.headerTitle, { color: t.onSurface }]}>Add Expense to {group?.name || 'Flat 402'}</Text>
+            <Text style={[styles.headerSub, { color: t.onSurfaceVariant }]}>{isPersonal ? 'PERSONAL LEDGER' : 'SHARED LEDGER'}</Text>
+            <Text style={[styles.headerTitle, { color: t.onSurface }]}>{isPersonal ? 'Add Personal Expense' : `Add Expense to ${group?.name || 'Flat 402'}`}</Text>
           </View>
         </View>
         <TouchableRipple onPress={() => nav.goBack()} style={[styles.closeBtn, { backgroundColor: t.surfaceVariant }]}>
@@ -190,27 +217,27 @@ export default function AddExpenseScreen() {
           
           {/* Amount Section */}
           <View style={styles.amountSection}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <MaterialIcons name="payments" size={16} color={t.outline} />
-                <Text style={[styles.amountLabel, { color: t.onSurfaceVariant }]}>Total Outlay</Text>
-              </View>
-              <TouchableOpacity onPress={handleScanReceipt} disabled={isScanning} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.primaryContainer, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                <MaterialIcons name="document-scanner" size={14} color={t.onPrimaryContainer} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: t.onPrimaryContainer }}>{isScanning ? 'SCANNING...' : 'SCAN RECEIPT'}</Text>
-              </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <MaterialIcons name="payments" size={16} color={t.outline} />
+              <Text style={[styles.amountLabel, { color: t.onSurfaceVariant }]}>Total Outlay</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
               <Text style={[styles.currencySymbol, { color: t.onSurface }]}>₹</Text>
-              <TextInput
-                style={[styles.amountInput, { color: t.onSurface }]}
-                value={amountStr}
-                onChangeText={setAmountStr}
-                keyboardType="numeric"
-                maxLength={8}
-                placeholder="0"
-                placeholderTextColor={t.outline}
-              />
+              {isScanning ? (
+                <View style={{ height: 60, width: 140, justifyContent: 'center', alignItems: 'center' }}>
+                  <Skeleton width={120} height={40} borderRadius={8} />
+                </View>
+              ) : (
+                <TextInput
+                  style={[styles.amountInput, { color: t.onSurface }]}
+                  value={amountStr}
+                  onChangeText={setAmountStr}
+                  keyboardType="numeric"
+                  maxLength={8}
+                  placeholder="0"
+                  placeholderTextColor={t.outline}
+                />
+              )}
             </View>
 
             {/* Quick Chips */}
@@ -229,53 +256,86 @@ export default function AddExpenseScreen() {
             {/* Description Input */}
             <View style={[styles.descInputWrap, { backgroundColor: t.surface }]}>
               <MaterialIcons name="edit" size={20} color={t.outline} />
-              <TextInput
-                style={[styles.descInput, { color: t.onSurface, flex: 1 }]}
-                value={desc}
-                onChangeText={setDesc}
-                placeholder="What was this for?"
-                placeholderTextColor={t.outline}
-              />
-              <TouchableOpacity onPress={handleAutoCategorize} disabled={isCategorizing || desc.length < 3}>
-                <Text style={{ fontSize: 18, opacity: (isCategorizing || desc.length < 3) ? 0.3 : 1 }}>✨</Text>
+              {isCategorizing ? (
+                 <View style={{ flex: 1, marginLeft: 12 }}>
+                   <Skeleton width="80%" height={20} borderRadius={4} />
+                 </View>
+              ) : (
+                <TextInput
+                  style={[styles.descInput, { color: t.onSurface, flex: 1 }]}
+                  value={desc}
+                  onChangeText={setDesc}
+                  placeholder="What was this for?"
+                  placeholderTextColor={t.outline}
+                />
+              )}
+              <TouchableOpacity 
+                onPress={handleAutoCategorize} 
+                disabled={isCategorizing || desc.length < 3}
+                style={{ padding: 8, backgroundColor: t.primaryContainer, borderRadius: 20 }}
+              >
+                <Text style={{ fontSize: 16, opacity: (isCategorizing || desc.length < 3) ? 0.4 : 1 }}>✨</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Paid By */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: t.onSurface }]}>Paid by</Text>
-              <Text style={[styles.sectionSub, { color: t.outline }]}>1 Payer</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-              {members.map((m, i) => {
-                const isSelected = paidBy === m.id;
-                return (
-                  <TouchableRipple 
-                    key={m.id} 
-                    onPress={() => setPaidBy(m.id)}
-                    style={[styles.payerCard, isSelected ? { backgroundColor: t.secondaryContainer, borderColor: t.primaryContainer } : { backgroundColor: t.surface, borderColor: t.surface }]}
-                  >
-                    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                      <View style={[styles.payerAvatar, { backgroundColor: m.color || t.primaryContainer, alignItems: 'center', justifyContent: 'center' }]}>
-                         <Text style={{ fontSize: 20, fontWeight: '700', color: '#fff' }}>{m.avatar}</Text>
-                      </View>
-                      {isSelected && (
-                        <View style={[styles.payerCheck, { backgroundColor: t.primary }]}>
-                          <MaterialIcons name="check" size={12} color={t.onPrimary} />
+          {/* Paid By and Split Method Animated Container */}
+          <Animated.View layout={LinearTransition.springify()}>
+            {!isPersonal && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: t.onSurface }]}>Paid by</Text>
+                <Text style={[styles.sectionSub, { color: t.outline }]}>1 Payer</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                {members.map((m, i) => {
+                  const isSelected = paidBy === m.id;
+                  return (
+                    <TouchableRipple 
+                      key={m.id} 
+                      onPress={() => setPaidBy(m.id)}
+                      style={[styles.payerCard, isSelected ? { backgroundColor: t.secondaryContainer, borderColor: t.primaryContainer } : { backgroundColor: t.surface, borderColor: t.surface }]}
+                    >
+                      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={[styles.payerAvatar, { backgroundColor: m.color || t.primaryContainer, alignItems: 'center', justifyContent: 'center' }]}>
+                           <Text style={{ fontSize: 20, fontWeight: '700', color: '#fff' }}>{m.avatar}</Text>
                         </View>
-                      )}
-                      <Text style={[styles.payerName, { color: t.onSurface }]}>{m.name.split(' ')[0]}</Text>
-                      <Text style={[styles.payerSub, { color: t.onSurfaceVariant }]}>{m.id === user?.id ? 'You' : `Room ${i}`}</Text>
-                    </View>
-                  </TouchableRipple>
-                );
-              })}
-            </ScrollView>
+                        {isSelected && (
+                          <View style={[styles.payerCheck, { backgroundColor: t.primary }]}>
+                            <MaterialIcons name="check" size={12} color={t.onPrimary} />
+                          </View>
+                        )}
+                        <Text style={[styles.payerName, { color: t.onSurface }]}>{m.name.split(' ')[0]}</Text>
+                        <Text style={[styles.payerSub, { color: t.onSurfaceVariant }]}>{m.id === user?.id ? 'You' : `Room ${i}`}</Text>
+                      </View>
+                    </TouchableRipple>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+          </Animated.View>
+
+          {/* Personal Expense Toggle */}
+          <View style={[styles.section, { padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: t.primaryContainer, borderRadius: 16, marginBottom: 16 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <MaterialIcons name="person" size={24} color={t.onPrimaryContainer} />
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: t.onPrimaryContainer }}>Personal Expense</Text>
+                <Text style={{ fontSize: 13, color: t.onPrimaryContainer, opacity: 0.8 }}>Do not split with anyone</Text>
+              </View>
+            </View>
+            <TouchableRipple 
+              onPress={() => setIsPersonal(!isPersonal)}
+              style={{ width: 44, height: 28, borderRadius: 14, backgroundColor: isPersonal ? t.primary : 'rgba(0,0,0,0.1)', justifyContent: 'center', alignItems: isPersonal ? 'flex-end' : 'flex-start', paddingHorizontal: 2 }}
+            >
+              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 }} />
+            </TouchableRipple>
           </View>
 
           {/* Split Method */}
+          <Animated.View layout={LinearTransition.springify()}>
+          {!isPersonal && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: t.onSurface }]}>Split Method</Text>
@@ -364,26 +424,36 @@ export default function AddExpenseScreen() {
               )}
             </Animated.View>
           </View>
+          )}
+          </Animated.View>
 
           {/* Bottom Options */}
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-            <TouchableRipple style={[styles.bottomOption, { backgroundColor: t.surface }]}>
+            <TouchableRipple style={[styles.bottomOption, { backgroundColor: t.surface }]} onPress={() => setShowDatePicker(true)}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <MaterialIcons name="calendar-today" size={24} color={t.outline} />
                 <View>
                   <Text style={[styles.bottomOptionTitle, { color: t.onSurfaceVariant }]}>Date</Text>
-                  <Text style={[styles.bottomOptionVal, { color: t.onSurface }]}>Today, 24 Oct</Text>
+                  <Text style={[styles.bottomOptionVal, { color: t.onSurface }]}>
+                    {expenseDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                  </Text>
                 </View>
               </View>
             </TouchableRipple>
-            <TouchableRipple style={[styles.bottomOption, { backgroundColor: t.secondaryContainer }]} onPress={() => Alert.alert("Coming soon", "Add Bill scanning will be available in the next release.")}>
+            <TouchableRipple 
+              style={[styles.bottomOption, { backgroundColor: isScanning ? t.surfaceVariant : t.secondaryContainer }]} 
+              onPress={handleScanReceipt}
+              disabled={isScanning}
+            >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <MaterialIcons name="receipt-long" size={24} color={t.onSecondaryContainer} />
+                <MaterialIcons name="receipt-long" size={24} color={isScanning ? t.outline : t.onSecondaryContainer} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.bottomOptionTitle, { color: t.onSecondaryContainer }]}>Receipt</Text>
-                  <Text style={[styles.bottomOptionVal, { color: t.onSecondaryContainer }]}>Add Bill</Text>
+                  <Text style={[styles.bottomOptionTitle, { color: isScanning ? t.outline : t.onSecondaryContainer }]}>Receipt</Text>
+                  <Text style={[styles.bottomOptionVal, { color: isScanning ? t.outline : t.onSecondaryContainer }]}>
+                    {isScanning ? 'Scanning...' : 'Add Bill'}
+                  </Text>
                 </View>
-                <MaterialIcons name="add" size={20} color={t.onSecondaryContainer} />
+                {!isScanning && <MaterialIcons name="add" size={20} color={t.onSecondaryContainer} />}
               </View>
             </TouchableRipple>
           </View>
@@ -405,6 +475,71 @@ export default function AddExpenseScreen() {
           </View>
         </TouchableRipple>
       </View>
+
+      {/* Custom Error Toast */}
+      {aiError && (
+        <View style={{ position: 'absolute', top: 60, left: 16, right: 16, backgroundColor: t.errorContainer, padding: 16, borderRadius: 12, elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <MaterialIcons name="error-outline" size={24} color={t.error} />
+            <Text style={{ flex: 1, color: t.error, fontSize: 14, fontWeight: '600' }}>{aiError}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Premium Bottom Sheet Modal for Receipt Source */}
+      <Modal visible={showReceiptPicker} transparent animationType="fade" onRequestClose={() => setShowReceiptPicker(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowReceiptPicker(false)} activeOpacity={1} />
+          <View style={{ backgroundColor: t.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: t.onSurface, marginBottom: 8 }}>Scan Receipt</Text>
+            <Text style={{ fontSize: 14, color: t.onSurfaceVariant, marginBottom: 24 }}>How would you like to upload your bill?</Text>
+            
+            <View style={{ gap: 12 }}>
+              <TouchableRipple style={{ backgroundColor: t.primaryContainer, borderRadius: 16, padding: 16 }} onPress={launchCamera}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                  <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: t.primary, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="photo-camera" size={24} color={t.onPrimary} />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: t.onPrimaryContainer }}>Take a Photo</Text>
+                    <Text style={{ fontSize: 13, color: t.onPrimaryContainer, opacity: 0.8 }}>Use your camera to scan a physical bill</Text>
+                  </View>
+                </View>
+              </TouchableRipple>
+
+              <TouchableRipple style={{ backgroundColor: t.surfaceVariant, borderRadius: 16, padding: 16 }} onPress={launchGallery}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                  <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: t.surface, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="image" size={24} color={t.onSurface} />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: t.onSurface }}>Upload from Gallery</Text>
+                    <Text style={{ fontSize: 13, color: t.onSurfaceVariant }}>Choose a screenshot of a digital bill</Text>
+                  </View>
+                </View>
+              </TouchableRipple>
+            </View>
+
+            <TouchableOpacity style={{ marginTop: 24, alignItems: 'center', padding: 12 }} onPress={() => setShowReceiptPicker(false)}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: t.outline }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date Picker */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={expenseDate}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (selectedDate) setExpenseDate(selectedDate);
+          }}
+        />
+      )}
+
     </SafeAreaView>
   );
 }
