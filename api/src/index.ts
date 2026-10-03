@@ -12,6 +12,7 @@ import authRouter     from './routes/auth';
 import groupsRouter   from './routes/groups';
 import expensesRouter from './routes/expenses';
 import settlementsRouter from './routes/settlements';
+import aiRouter from './routes/ai';
 
 const app    = express();
 const server = http.createServer(app);
@@ -26,6 +27,7 @@ app.use('/auth',         authRouter);
 app.use('/groups',       groupsRouter);
 app.use('/groups/:id/expenses', expensesRouter);
 app.use('/groups/:id/settlements', settlementsRouter);
+app.use('/ai',           aiRouter);
 
 // ── Health ─────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {

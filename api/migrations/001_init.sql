@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   color        VARCHAR(7)   NOT NULL DEFAULT '#8DC63F',
   avatar       VARCHAR(10)  NOT NULL DEFAULT '',
+  upi_id       VARCHAR(50)  DEFAULT '',
   created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

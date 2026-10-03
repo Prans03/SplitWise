@@ -118,4 +118,11 @@ router.put('/profile', requireAuth, async (req: Request, res: Response) => {
   res.json({ user: updated });
 });
 
+// ── DELETE /auth/account ─────────────────────────────────────────
+router.delete('/account', requireAuth, async (req: Request, res: Response) => {
+  // This cascade-deletes everything related to the user: groups, expenses, settlements
+  await query(`DELETE FROM users WHERE id = $1`, [req.user!.id]);
+  res.json({ ok: true });
+});
+
 export default router;

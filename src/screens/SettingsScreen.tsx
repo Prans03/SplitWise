@@ -8,10 +8,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { useStore } from '../store/useStore';
+import { useStore, Expense } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useTheme, PALETTES, PaletteId } from '../theme';
 import { Avatar, FloatingTabBar } from '../components';
+import { File, Paths } from 'expo-file-system';
+import { isAvailableAsync, shareAsync } from 'expo-sharing';
 
 function SettingRow({ emoji, label, value, onPress, last = false, rightContent }: {
   emoji: string; label: string; value?: string; onPress?: () => void; last?: boolean; rightContent?: React.ReactNode;
@@ -50,6 +52,31 @@ export default function SettingsScreen() {
   const toggleDark = useStore((s) => s.toggleDarkMode);
   const setPalette = useStore((s) => s.setPalette);
   const user      = useAuthStore((s) => s.user);
+  const groups    = useStore((s) => s.groups);
+  const expenses  = useStore((s) => s.expenses);
+
+  const handleExportData = async () => {
+    try {
+      const allExpenses = Object.values(expenses).flat() as Expense[];
+      const header = 'Type,Group Name,Description,Amount,Date\n';
+      const rows = allExpenses.map(e => {
+        const group = groups.find(g => g.id === e.groupId);
+        const groupName = group ? `"${group.name}"` : 'Unknown';
+        const dateStr = new Date(e.date).toISOString().split('T')[0];
+        return `Expense,${groupName},"${e.description}",${e.amount},${dateStr}`;
+      });
+      const csvContent = header + rows.join('\n');
+      
+      const file = new File(Paths.document, 'SplitWise_Export.csv');
+      file.write(csvContent);
+      
+      if (await isAvailableAsync()) {
+        await shareAsync(file.uri);
+      }
+    } catch (err) {
+      console.log('Export failed', err);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: t.background }]} edges={['top']}>
@@ -86,7 +113,8 @@ export default function SettingsScreen() {
 
         {/* ACTIONS CATEGORY */}
         <Section title="ACTIONS">
-          <SettingRow emoji="📷" label="Scan QR Code" value="Join a group" onPress={() => nav.navigate('Scan')} last />
+          <SettingRow emoji="📷" label="Scan QR Code" value="Join a group" onPress={() => nav.navigate('Scan')} />
+          <SettingRow emoji="📊" label="Export Data (CSV)" value="Download your expenses" onPress={handleExportData} last />
         </Section>
 
         {/* APPEARANCE CATEGORY */}

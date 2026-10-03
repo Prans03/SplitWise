@@ -28,6 +28,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   updateProfile: (upi_id: string) => Promise<boolean>;
+  deleteAccount: () => Promise<boolean>;
   clearError: () => void;
 }
 
@@ -99,6 +100,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     }
     set({ user: res.data.user, isSubmitting: false });
+    return true;
+  },
+
+  // ── Delete Account ─────────────────────────────────────────
+  deleteAccount: async () => {
+    set({ isSubmitting: true, error: null });
+    const res = await api.delete('/auth/account');
+    if (res.error) {
+      set({ isSubmitting: false, error: res.error ?? 'Delete failed' });
+      return false;
+    }
+    await clearToken();
+    wsClient.disconnect();
+    set({ user: null, token: null, isSubmitting: false });
     return true;
   },
 

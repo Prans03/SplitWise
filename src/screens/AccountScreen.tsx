@@ -14,6 +14,7 @@ export default function AccountScreen() {
   const t       = useTheme();
   const user    = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
+  const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const updateProfile = useAuthStore((s) => s.updateProfile);
   const isSubmitting = useAuthStore((s) => s.isSubmitting);
   
@@ -29,6 +30,20 @@ export default function AccountScreen() {
         reset();
       }},
     ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account?', 
+      'This action is irreversible. All your groups, expenses, and settlements will be permanently deleted.', 
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Permanently', style: 'destructive', onPress: async () => {
+          const success = await deleteAccount();
+          if (success) reset();
+        }},
+      ]
+    );
   };
 
   const handleSaveUpi = async () => {
@@ -125,12 +140,19 @@ export default function AccountScreen() {
           </View>
         )}
 
-        {/* Sign out */}
+        {/* Sign out & Delete Account */}
         <TouchableOpacity
           onPress={handleSignOut}
+          style={[styles.signOutBtn, { backgroundColor: t.surfaceVariant, marginTop: 8 }]}
+        >
+          <Text style={[styles.signOutText, { color: t.onSurfaceVariant }]}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleDeleteAccount}
           style={[styles.signOutBtn, { backgroundColor: t.errorContainer }]}
         >
-          <Text style={[styles.signOutText, { color: t.error }]}>Sign Out</Text>
+          <Text style={[styles.signOutText, { color: t.error }]}>Delete Account</Text>
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />

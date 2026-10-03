@@ -21,7 +21,9 @@
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": true,
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,7 +37,8 @@
         {
           "cameraPermission": "SplitWise needs camera access to scan QR codes for joining groups and adding members."
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

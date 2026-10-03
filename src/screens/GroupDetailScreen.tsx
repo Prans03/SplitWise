@@ -4,7 +4,7 @@
 import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Alert, StatusBar, FlatList,
-  RefreshControl,
+  RefreshControl, TextInput
 } from 'react-native';
 import { TouchableRipple } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { useTheme } from '../theme';
 import { RootStackParamList } from '../types';
 import { Avatar, EmptyState, Skeleton } from '../components';
 import { formatINR, getMemberSummaries } from '../utils/settlement';
+import { api } from '../api/client';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'GroupDetail'>;
@@ -31,9 +32,12 @@ export default function GroupDetailScreen() {
   const fetchExpenses   = useStore((s) => s.fetchExpenses);
   const deleteExpense   = useStore((s) => s.deleteExpense);
   const deleteGroup     = useStore((s) => s.deleteGroup);
+  const addExpense      = useStore((s) => s.addExpense);
 
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [quickAddText, setQuickAddText] = useState('');
+  const [isQuickAdding, setIsQuickAdding] = useState(false);
 
   const group   = groups.find((g) => g.id === groupId);
   const members: User[] = (group?.members ?? []) as User[];
@@ -52,6 +56,35 @@ export default function GroupDetailScreen() {
     await Promise.all([fetchGroupDetail(groupId), fetchExpenses(groupId)]);
     setRefreshing(false);
   }, [groupId]);
+
+  const handleQuickAdd = async () => {
+    if (quickAddText.trim().length < 5) return;
+    setIsQuickAdding(true);
+    try {
+      const res = await api.post<{ description: string, amount: number, paidBy: string, splits: {userId: string, amount: number}[] }>('/ai/quick-add', {
+        text: quickAddText,
+        groupMembers: members.map(m => ({ id: m.id, name: m.name }))
+      });
+      if (res.data && res.data.amount) {
+        await addExpense({
+          groupId,
+          description: res.data.description || 'AI Quick Add',
+          amount: Number(res.data.amount),
+          category: 'other',
+          paidById: res.data.paidBy || members[0]?.id,
+          splitMode: res.data.splits ? 'custom' : 'equally',
+          splitMemberIds: members.map(m => m.id),
+          customSplits: res.data.splits
+        });
+        setQuickAddText('');
+        refresh();
+      }
+    } catch (e) {
+      Alert.alert('AI Error', 'Could not parse text.');
+    } finally {
+      setIsQuickAdding(false);
+    }
+  };
 
   const totalSpending = useMemo(() => groupExpenses.reduce((s, e) => s + e.amount, 0), [groupExpenses]);
   const summaries = useMemo(() => getMemberSummaries(groupExpenses, members), [groupExpenses, members]);
@@ -158,6 +191,24 @@ export default function GroupDetailScreen() {
               </View>
             </View>
           )}
+        </View>
+      </View>
+
+      {/* AI Quick Add Input */}
+      <View style={{ marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 24, paddingHorizontal: 16, paddingVertical: 4, elevation: 2, shadowColor: t.onBackground, shadowOpacity: 0.05, shadowRadius: 8 }}>
+          <MaterialIcons name="auto-awesome" size={20} color={t.primary} />
+          <TextInput
+            style={{ flex: 1, height: 48, marginLeft: 12, fontSize: 15, color: t.onSurface }}
+            placeholder="E.g. I paid ₹500 for pizza for everyone"
+            placeholderTextColor={t.onSurfaceVariant}
+            value={quickAddText}
+            onChangeText={setQuickAddText}
+            editable={!isQuickAdding}
+            onSubmitEditing={handleQuickAdd}
+            returnKeyType="send"
+          />
+          {isQuickAdding && <Text style={{ fontSize: 12, color: t.primary, fontWeight: '700' }}>THINKING...</Text>}
         </View>
       </View>
 

@@ -12,6 +12,8 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, { LinearTransition } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
+import { api } from '../api/client';
 import { useStore, User } from '../store/useStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useTheme } from '../theme';
@@ -42,9 +44,14 @@ export default function AddExpenseScreen() {
   const [splitMode, setSplitMode] = useState('equally');
   
   // State for toggling members in equal split
+  // State for toggling members in equal split
   const [includedIds, setIncludedIds] = useState<string[]>([]);
   // State for custom split amounts
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
+  
+  // AI states
+  const [isScanning, setIsScanning] = useState(false);
+  const [isCategorizing, setIsCategorizing] = useState(false);
 
   useEffect(() => {
     // If members are empty, fetch the group detail to populate them
@@ -70,6 +77,57 @@ export default function AddExpenseScreen() {
         ? prev.filter(x => x !== id) 
         : [...prev, id]
     );
+  };
+
+  const handleScanReceipt = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      quality: 0.5,
+    });
+    if (!result.canceled && result.assets[0].base64) {
+      setIsScanning(true);
+      try {
+        const res = await api.post<{ items: { description: string, amount: number }[] }>('/ai/receipt', {
+          base64Image: result.assets[0].base64,
+          mimeType: result.assets[0].mimeType || 'image/jpeg'
+        });
+        if (res.data && res.data.items && res.data.items.length > 0) {
+          let total = 0;
+          let descParts: string[] = [];
+          res.data.items.forEach(item => {
+            total += parseFloat(item.amount as any) || 0;
+            descParts.push(item.description);
+          });
+          setAmountStr(total.toFixed(2));
+          setDesc('🧾 ' + descParts.slice(0, 3).join(', ') + (descParts.length > 3 ? '...' : ''));
+        } else {
+          Alert.alert('Scan failed', 'Could not read receipt items.');
+        }
+      } catch (e) {
+        Alert.alert('Scan Error', 'Something went wrong while connecting to Gemini AI.');
+      } finally {
+        setIsScanning(false);
+      }
+    }
+  };
+
+  const handleAutoCategorize = async () => {
+    if (desc.trim().length < 3) return;
+    setIsCategorizing(true);
+    try {
+      const res = await api.post<{ emoji: string, category: string }>('/ai/categorize', { description: desc });
+      if (res.data && res.data.emoji) {
+        setCategory(res.data.category);
+        if (!desc.startsWith(res.data.emoji)) {
+           setDesc(`${res.data.emoji} ${desc}`);
+        }
+      }
+    } catch (e) {
+      console.log('Categorize failed', e);
+    } finally {
+      setIsCategorizing(false);
+    }
   };
 
   const handleSave = () => {
@@ -132,9 +190,15 @@ export default function AddExpenseScreen() {
           
           {/* Amount Section */}
           <View style={styles.amountSection}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <MaterialIcons name="payments" size={16} color={t.outline} />
-              <Text style={[styles.amountLabel, { color: t.onSurfaceVariant }]}>Total Outlay</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MaterialIcons name="payments" size={16} color={t.outline} />
+                <Text style={[styles.amountLabel, { color: t.onSurfaceVariant }]}>Total Outlay</Text>
+              </View>
+              <TouchableOpacity onPress={handleScanReceipt} disabled={isScanning} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.primaryContainer, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                <MaterialIcons name="document-scanner" size={14} color={t.onPrimaryContainer} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: t.onPrimaryContainer }}>{isScanning ? 'SCANNING...' : 'SCAN RECEIPT'}</Text>
+              </TouchableOpacity>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
               <Text style={[styles.currencySymbol, { color: t.onSurface }]}>₹</Text>
@@ -166,12 +230,15 @@ export default function AddExpenseScreen() {
             <View style={[styles.descInputWrap, { backgroundColor: t.surface }]}>
               <MaterialIcons name="edit" size={20} color={t.outline} />
               <TextInput
-                style={[styles.descInput, { color: t.onSurface }]}
+                style={[styles.descInput, { color: t.onSurface, flex: 1 }]}
                 value={desc}
                 onChangeText={setDesc}
                 placeholder="What was this for?"
                 placeholderTextColor={t.outline}
               />
+              <TouchableOpacity onPress={handleAutoCategorize} disabled={isCategorizing || desc.length < 3}>
+                <Text style={{ fontSize: 18, opacity: (isCategorizing || desc.length < 3) ? 0.3 : 1 }}>✨</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
