@@ -6,8 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ── Network Configuration ───────────────────────────────────────
 // __DEV__ is automatically true in Expo Go, and false when you build an APK.
 export const API_URL = __DEV__
-  ? 'http://192.168.29.148:4000'                      // Local IP for Expo Go development
-  : 'https://splitwise-backend-demo.onrender.com';    // Cloud IP for your APK file
+  ? 'https://splitwise-whc6.onrender.com'             // Use cloud backend even for local Expo Go testing now
+  : 'https://splitwise-whc6.onrender.com';            // Cloud IP for your APK file
 
 export const SESSION_KEY = '@splitwise/session_token';
 
